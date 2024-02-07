@@ -106,6 +106,16 @@ fn main() {
     for i in vec.len() - 3..vec.len() - 1 {
         vec[i] += 1;
     }
+
+    // Don't lint if indices are all path kind
+    let mut matrix = [[0; 3]; 3];
+    for i in 0..3 {
+        matrix[i][i] = 1;
+    }
+    let mut matrix = [[[0; 3]; 3]; 3];
+    for i in 0..3 {
+        matrix[i][i][i] = 1;
+    }
 }
 
 mod issue2277 {

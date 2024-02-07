@@ -3,7 +3,7 @@ use clippy_utils::diagnostics::{multispan_sugg, span_lint_and_then};
 use clippy_utils::source::snippet;
 use clippy_utils::ty::has_iter_method;
 use clippy_utils::visitors::is_local_used;
-use clippy_utils::{contains_name, higher, is_integer_const, sugg, SpanlessEq};
+use clippy_utils::{contains_name, higher, is_integer_const, peel_blocks_with_stmt, sugg, SpanlessEq};
 use rustc_ast::ast;
 use rustc_data_structures::fx::{FxHashMap, FxHashSet};
 use rustc_hir::def::{DefKind, Res};
@@ -74,6 +74,13 @@ pub(super) fn check<'tcx>(
                 if visitor.referenced.contains(&indexed) {
                     return;
                 }
+
+                // don't lint if indices are all path kind
+                // if indices_all_path_kind(body) {
+                //     return;
+                // }
+
+                dbg!(peel_blocks_with_stmt(body));
 
                 let starts_at_zero = is_integer_const(cx, start, 0);
 
@@ -217,6 +224,23 @@ fn is_end_eq_array_len<'tcx>(
     false
 }
 
+fn indices_all_path_kind(expr: &Expr<'_>) -> bool {
+    // Peel Block kind
+
+    // Recursively checks ExprKind
+    if let ExprKind::Index(left_expr, right_expr, _) = expr.kind {
+        // Index(Path(_), Path(_), _) returns true
+        if matches!(left_expr.kind, ExprKind::Path(_)) {
+            return matches!(right_expr.kind, ExprKind::Path(_));
+        }
+
+        // Nested Index pattern
+        return indices_all_path_kind(left_expr) && matches!(right_expr.kind, ExprKind::Path(_));
+    }
+
+    false
+}
+
 struct VarVisitor<'a, 'tcx> {
     /// context reference
     cx: &'a LateContext<'tcx>,
@@ -243,7 +267,7 @@ struct VarVisitor<'a, 'tcx> {
 impl<'a, 'tcx> VarVisitor<'a, 'tcx> {
     fn check(&mut self, idx: &'tcx Expr<'_>, seqexpr: &'tcx Expr<'_>, expr: &'tcx Expr<'_>) -> bool {
         if let ExprKind::Path(ref seqpath) = seqexpr.kind
-            // the indexed container is referenced by a name
+        // the indexed container is referenced by a name
             && let QPath::Resolved(None, seqvar) = *seqpath
             && seqvar.segments.len() == 1
             && is_local_used(self.cx, idx, self.var)
@@ -294,12 +318,12 @@ impl<'a, 'tcx> VarVisitor<'a, 'tcx> {
 impl<'a, 'tcx> Visitor<'tcx> for VarVisitor<'a, 'tcx> {
     fn visit_expr(&mut self, expr: &'tcx Expr<'_>) {
         if let ExprKind::MethodCall(meth, args_0, [args_1, ..], _) = &expr.kind
-            // a range index op
+        // a range index op
             && let Some(trait_id) = self
-                .cx
-                .typeck_results()
-                .type_dependent_def_id(expr.hir_id)
-                .and_then(|def_id| self.cx.tcx.trait_of_item(def_id))
+            .cx
+            .typeck_results()
+            .type_dependent_def_id(expr.hir_id)
+            .and_then(|def_id| self.cx.tcx.trait_of_item(def_id))
             && ((meth.ident.name == sym::index && self.cx.tcx.lang_items().index_trait() == Some(trait_id))
                 || (meth.ident.name == sym::index_mut && self.cx.tcx.lang_items().index_mut_trait() == Some(trait_id)))
             && !self.check(args_1, args_0, expr)
@@ -308,14 +332,14 @@ impl<'a, 'tcx> Visitor<'tcx> for VarVisitor<'a, 'tcx> {
         }
 
         if let ExprKind::Index(seqexpr, idx, _) = expr.kind
-            // an index op
+        // an index op
             && !self.check(idx, seqexpr, expr)
         {
             return;
         }
 
         if let ExprKind::Path(QPath::Resolved(None, path)) = expr.kind
-            // directly using a variable
+        // directly using a variable
             && let Res::Local(local_id) = path.res
         {
             if local_id == self.var {
