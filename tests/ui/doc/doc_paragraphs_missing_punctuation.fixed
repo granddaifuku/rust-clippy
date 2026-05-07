@@ -181,3 +181,10 @@ struct BlockDocComment;
 #[doc = ""]
 /// ```
 struct DocAttribute;
+
+#[allow(clippy::mixed_attributes_style)]
+/// Outer docs can share a paragraph with inner docs.
+mod module2 {
+    //! modu.
+    //~^ doc_paragraphs_missing_punctuation
+}

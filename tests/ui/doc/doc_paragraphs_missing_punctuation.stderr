@@ -103,5 +103,11 @@ error: doc paragraphs should end with a terminal punctuation mark
 LL |  * Block doc comments work
    |                           ^ help: end the paragraph with some punctuation: `.`
 
-error: aborting due to 17 previous errors
+error: doc paragraphs should end with a terminal punctuation mark
+  --> tests/ui/doc/doc_paragraphs_missing_punctuation.rs:188:13
+   |
+LL |     //! modu
+   |             ^ help: end the paragraph with some punctuation: `.`
+
+error: aborting due to 18 previous errors
 

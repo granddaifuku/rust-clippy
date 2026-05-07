@@ -1,6 +1,6 @@
 use rustc_errors::Applicability;
 use rustc_lint::LateContext;
-use rustc_resolve::rustdoc::main_body_opts;
+use rustc_resolve::rustdoc::{add_doc_fragment, main_body_opts, source_span_for_markdown_range};
 
 use rustc_resolve::rustdoc::pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
 
@@ -14,7 +14,7 @@ pub fn check(cx: &LateContext<'_>, doc: &str, fragments: Fragments<'_>) {
         match missing_punctuation {
             MissingPunctuation::Fixable(offset) => {
                 // This ignores `#[doc]` attributes, which we do not handle.
-                if let Some(span) = fragments.span(cx, offset..offset) {
+                if let Some(span) = insert_span(cx, fragments, offset) {
                     clippy_utils::diagnostics::span_lint_and_sugg(
                         cx,
                         DOC_PARAGRAPHS_MISSING_PUNCTUATION,
@@ -28,7 +28,7 @@ pub fn check(cx: &LateContext<'_>, doc: &str, fragments: Fragments<'_>) {
             },
             MissingPunctuation::Unfixable(offset) => {
                 // This ignores `#[doc]` attributes, which we do not handle.
-                if let Some(span) = fragments.span(cx, offset..offset) {
+                if let Some(span) = insert_span(cx, fragments, offset) {
                     clippy_utils::diagnostics::span_lint_and_help(
                         cx,
                         DOC_PARAGRAPHS_MISSING_PUNCTUATION,
@@ -41,6 +41,35 @@ pub fn check(cx: &LateContext<'_>, doc: &str, fragments: Fragments<'_>) {
             },
         }
     }
+}
+
+fn insert_span(cx: &LateContext<'_>, fragments: Fragments<'_>, offset: usize) -> Option<rustc_span::Span> {
+    let needle = fragments.doc[..offset]
+        .char_indices()
+        .next_back()
+        .map_or(offset, |(start, _)| start);
+
+    let mut fragment_start = 0;
+    for fragment in fragments.fragments {
+        let mut fragment_doc = String::new();
+        add_doc_fragment(&mut fragment_doc, fragment);
+        let fragment_end = fragment_start + fragment_doc.len();
+
+        if needle < fragment_end {
+            let local_offset = offset - fragment_start;
+            return source_span_for_markdown_range(
+                cx.tcx,
+                &fragment_doc,
+                &(local_offset..local_offset),
+                std::slice::from_ref(fragment),
+            )
+            .map(|(span, _)| span);
+        }
+
+        fragment_start = fragment_end;
+    }
+
+    None
 }
 
 #[must_use]
